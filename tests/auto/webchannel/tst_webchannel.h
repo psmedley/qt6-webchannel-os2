@@ -72,10 +72,10 @@ class TestObject : public QObject
     Q_PROPERTY(QString stringProperty READ readStringProperty WRITE setStringProperty BINDABLE bindableStringProperty)
 
 public:
-    explicit TestObject(QObject *parent = 0)
+    explicit TestObject(QObject *parent = nullptr)
         : QObject(parent)
-        , mObjectProperty(0)
-        , mReturnedObject(Q_NULLPTR)
+        , mObjectProperty(nullptr)
+        , mReturnedObject(nullptr)
     { }
 
     enum Foo {
@@ -342,8 +342,10 @@ private slots:
     void testTransportWrapObjectProperties();
     void testRemoveUnusedTransports();
     void testPassWrappedObjectBack();
+    void testWrapValues_data();
     void testWrapValues();
     void testWrapObjectWithMultipleTransports();
+    void testJsonToVariant_data();
     void testJsonToVariant();
     void testInfiniteRecursion();
     void testAsyncObject();
