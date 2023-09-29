@@ -5,7 +5,9 @@
     \example chatclient-html
     \title Qt WebChannel ChatClient HTML Example
     \ingroup qtwebchannel-examples
+    \examplecategory {Web Technologies}
     \brief A HTML/JavaScript client that communicates over a WebSocket with a QWebChannel server.
+
 
     \image chatclient-html.png
 
@@ -33,6 +35,6 @@
     The client is able to work with \l{Qt WebChannel ChatServer Example}.
 
 
-    \sa {Qt WebChannel ChatServer Example}, {Qt WebChannel ChatClient QML Example}
+    \sa {Qt WebChannel ChatServer Example}, {Qt WebChannel ChatClient QML Application}
 
 */
