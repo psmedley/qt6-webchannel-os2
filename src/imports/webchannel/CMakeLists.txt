@@ -22,6 +22,7 @@ qt_internal_add_qml_module(webchannel
         Qt::Core
         Qt::Quick
         Qt::WebChannelPrivate
+    OS2_SHORT_NAME WebChann
 )
 
 #### Keys ignored in scope 1:.:.:webchannel.pro:<TRUE>:
