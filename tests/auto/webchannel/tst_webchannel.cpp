@@ -4,11 +4,12 @@
 
 #include "tst_webchannel.h"
 
-#include <qwebchannel.h>
-#include <qwebchannel_p.h>
-#include <qmetaobjectpublisher_p.h>
+#include <QtWebChannel/qwebchannel.h>
+#include <QtWebChannel/private/qwebchannel_p.h>
+#include <QtWebChannel/private/qmetaobjectpublisher_p.h>
 
 #include <QtTest>
+#include <QtTest/private/qpropertytesthelper_p.h>
 #ifdef WEBCHANNEL_TESTS_CAN_USE_JS_ENGINE
 #include <QJSEngine>
 #endif
@@ -19,6 +20,10 @@
 #ifdef WEBCHANNEL_TESTS_CAN_USE_CONCURRENT
 #include <QtConcurrent>
 #endif
+
+#include <memory>
+#include <optional>
+#include <vector>
 
 QT_USE_NAMESPACE
 
@@ -183,7 +188,7 @@ QVariantList convert_to_js(const TestStructVector &list)
 #if QT_CONFIG(future)
 QFuture<int> TestObject::futureIntResult() const
 {
-    return QtFuture::makeReadyFuture(42);
+    return QtFuture::makeReadyValueFuture(42);
 }
 
 QFuture<int> TestObject::futureDelayedIntResult() const
@@ -209,12 +214,12 @@ QFuture<int> TestObject::futureIntResultFromThread() const
 
 QFuture<void> TestObject::futureVoidResult() const
 {
-    return QtFuture::makeReadyFuture();
+    return QtFuture::makeReadyVoidFuture();
 }
 
 QFuture<QString> TestObject::futureStringResult() const
 {
-    return QtFuture::makeReadyFuture<QString>("foo");
+    return QtFuture::makeReadyValueFuture<QString>("foo");
 }
 
 QFuture<int> TestObject::cancelledFuture() const
@@ -241,8 +246,34 @@ TestWebChannel::TestWebChannel(QObject *parent)
     , m_lastDouble(0)
 {
     qRegisterMetaType<TestStruct>();
+    Q_ASSERT(QMetaType::fromType<TestStruct>().isEqualityComparable());
+    Q_ASSERT(QMetaType::fromType<TestStruct>().hasRegisteredDebugStreamOperator());
+
     qRegisterMetaType<TestStructVector>();
     QMetaType::registerConverter<TestStructVector, QVariantList>(convert_to_js);
+
+    QMetaType::registerConverter<TestStruct, QString>();
+
+    QMetaType::registerConverter<TestStruct, QJsonValue>(
+        [](const TestStruct &s) {
+            return QJsonObject {
+                { "__type__", "TestStruct" },
+                { "foo", s.foo },
+                { "bar", s.bar },
+            };
+        });
+
+    QMetaType::registerConverter<QJsonValue, TestStruct>(
+        [](const QJsonValue &value) -> std::optional<TestStruct> {
+            const auto object = value.toObject();
+            if (object.value("__type__").toString() != QStringLiteral("TestStruct"))
+                return std::nullopt;
+
+            return TestStruct {
+                object.value("foo").toInt(),
+                object.value("bar").toInt(),
+            };
+        });
 }
 
 TestWebChannel::~TestWebChannel()
@@ -303,6 +334,16 @@ void TestWebChannel::setJsonValue(const QJsonValue& v)
 {
     m_lastJsonValue = v;
     emit lastJsonValueChanged();
+}
+
+QUrl TestWebChannel::readUrl() const
+{
+    return m_lastUrl;
+}
+
+void TestWebChannel::setUrl(const QUrl& u)
+{
+    m_lastUrl = u;
 }
 
 QJsonObject TestWebChannel::readJsonObject() const
@@ -653,6 +694,15 @@ void TestWebChannel::testInvokeMethodConversion()
         auto retVal = channel.d_func()->publisher->invokeMethod(this, getterMethod, {});
         QCOMPARE(retVal, QVariant::fromValue(array));
     }
+    {
+        args[0] = QJsonValue::fromVariant(QUrl("aviancarrier:/ok"));
+        channel.d_func()->publisher->invokeMethod(this, "setUrl", args);
+        QVERIFY(m_lastUrl.isValid());
+        int getterMethod = metaObject()->indexOfMethod("readUrl()");
+        QVERIFY(getterMethod != -1);
+        auto retVal = channel.d_func()->publisher->invokeMethod(this, getterMethod, {});
+        QCOMPARE(retVal, args.at(0).toVariant().toUrl());
+    }
 }
 
 void TestWebChannel::testFunctionOverloading()
@@ -945,10 +995,18 @@ void TestWebChannel::testWrapValues_data()
                           << QJsonValue(QJsonObject{{"One", 1},
                                                     {"Two", 2}});
 
+    QTest::addRow("url") << QVariant::fromValue(QUrl("aviancarrier:/test"))
+                         << QJsonValue(QJsonValue(QString("aviancarrier:/test")));
+
     QTest::addRow("map") << QVariant::fromValue(QVariantMap{{"One", 1},
                                                             {"Two", 2}})
                          << QJsonValue(QJsonObject{{"One", 1},
                                                    {"Two", 2}});
+
+    QTest::addRow("customType") << QVariant::fromValue(TestStruct{42, 7})
+                                << QJsonValue(QJsonObject{{"__type__", "TestStruct"},
+                                                          {"foo", 42},
+                                                          {"bar", 7}});
 }
 
 void TestWebChannel::testWrapValues()
@@ -990,6 +1048,11 @@ void TestWebChannel::testJsonToVariant_data()
     const TestObject::TestFlags flags =  TestObject::FirstFlag | TestObject::SecondFlag;
     QTest::addRow("flags") << QJsonValue(static_cast<int>(flags))
                            << QVariant::fromValue(flags);
+
+    QTest::addRow("customType") << QJsonValue(QJsonObject{{"__type__", "TestStruct"},
+                                                          {"foo", 42},
+                                                          {"bar", 7}})
+                                << QVariant::fromValue(TestStruct{42, 7});
 }
 
 void TestWebChannel::testJsonToVariant()
@@ -1244,6 +1307,25 @@ void TestWebChannel::testQPropertyBlockUpdates()
     QCOMPARE(transport.messagesSent().size(), 1u);
 }
 
+void TestWebChannel::testBindings()
+{
+    QWebChannel channel;
+
+    QTestPrivate::testReadWritePropertyBasics(channel, true, false, "blockUpdates");
+    if (QTest::currentTestFailed()) {
+        qDebug("Failed property test for QWebChannel::blockUpdates");
+        return;
+    }
+
+    QVERIFY(!channel.blockUpdates());
+
+    QTestPrivate::testReadWritePropertyBasics(channel, 100, 200, "propertyUpdateInterval");
+    if (QTest::currentTestFailed()) {
+        qDebug("Failed property test for QWebChannel::propertyUpdateInterval");
+        return;
+    }
+}
+
 void TestWebChannel::testPropertyMultipleTransports()
 {
     DummyTransport transport1;
@@ -1469,31 +1551,30 @@ void TestWebChannel::benchRegisterObjects()
 void TestWebChannel::benchRemoveTransport()
 {
     QWebChannel channel;
-    QList<DummyTransport*> dummyTransports;
-    for (int i = 500; i > 0; i--)
-        dummyTransports.append(new DummyTransport(this));
+    std::vector<std::unique_ptr<DummyTransport>> dummyTransports(500);
+    for (auto &e : dummyTransports)
+        e = std::make_unique<DummyTransport>(this);
 
-    QList<QSharedPointer<TestObject>> objs;
+    std::vector<std::unique_ptr<TestObject>> objs;
     QMetaObjectPublisher *pub = channel.d_func()->publisher;
 
-    foreach (DummyTransport *transport, dummyTransports) {
+    for (auto &e : dummyTransports) {
+        DummyTransport *transport = e.get();
         channel.connectTo(transport);
         channel.d_func()->publisher->initializeClient(transport);
 
         /* 30 objects per transport */
         for (int i = 30; i > 0; i--) {
-            QSharedPointer<TestObject> obj = QSharedPointer<TestObject>::create();
-            objs.append(obj);
-            pub->wrapResult(QVariant::fromValue(obj.data()), transport);
+            auto obj = std::make_unique<TestObject>();
+            pub->wrapResult(QVariant::fromValue(obj.get()), transport);
+            objs.push_back(std::move(obj));
         }
     }
 
     QBENCHMARK_ONCE {
-        for (auto transport : dummyTransports)
-            pub->transportRemoved(transport);
+        for (auto &transport : dummyTransports)
+            pub->transportRemoved(transport.get());
     }
-
-    qDeleteAll(dummyTransports);
 }
 
 #ifdef WEBCHANNEL_TESTS_CAN_USE_JS_ENGINE

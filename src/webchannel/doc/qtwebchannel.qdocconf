@@ -40,10 +40,10 @@ tagfile                                             = ../../../doc/qtwebchannel/
 depends                                             += qtcore qtquick qtqml qtdoc qtwebengine qtwebsockets qmake qtcmake
 
 headerdirs                                          += .. \
-                                                       ../../imports
+                                                       ../../webchannelquick
 
 sourcedirs                                          += .. \
-                                                       ../../imports
+                                                       ../../webchannelquick
 
 imagedirs                                           += images
 
@@ -53,6 +53,8 @@ examples.fileextensions                             += "*.html *.json"
 navigation.landingpage                              = "Qt WebChannel"
 navigation.cppclassespage                           = "Qt WebChannel C++ Classes"
 navigation.qmltypespage                             = "Qt WebChannel QML Types"
+
+manifestmeta.highlighted.names = "QtWebChannel/Qt WebChannel Standalone Example"
 
 # Enforce zero warnings for the documention build
 warninglimit = 0

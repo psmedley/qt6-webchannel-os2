@@ -15,6 +15,7 @@
 #if QT_CONFIG(future)
 #include <QFuture>
 #endif
+#include <QtDebug>
 
 #include <QtWebChannel/QWebChannelAbstractTransport>
 
@@ -26,7 +27,21 @@ struct TestStruct
     {}
     int foo;
     int bar;
+
+    operator QString() const {
+        return QStringLiteral("TestStruct(foo=%1, bar=%2)").arg(foo).arg(bar);
+    }
 };
+inline bool operator==(const TestStruct &a, const TestStruct &b)
+{
+    return a.foo == b.foo && a.bar == b.bar;
+}
+inline QDebug operator<<(QDebug &dbg, const TestStruct &ts)
+{
+    QDebugStateSaver dbgState(dbg);
+    dbg.noquote() << static_cast<QString>(ts);
+    return dbg;
+}
 Q_DECLARE_METATYPE(TestStruct)
 using TestStructVector = std::vector<TestStruct>;
 Q_DECLARE_METATYPE(TestStructVector)
@@ -314,6 +329,9 @@ public slots:
     QJsonArray readJsonArray() const;
     void setJsonArray(const QJsonArray &v);
 
+    QUrl readUrl() const;
+    void setUrl(const QUrl &u);
+
     int readOverload(int i);
     QString readOverload(const QString &arg);
     QString readOverload(const QString &arg, int i);
@@ -354,6 +372,7 @@ private slots:
     void testPropertyUpdateInterval();
     void testPropertyMultipleTransports();
     void testQPropertyBlockUpdates();
+    void testBindings();
     void testDeletionDuringMethodInvocation_data();
     void testDeletionDuringMethodInvocation();
 
@@ -381,6 +400,7 @@ private:
     QJsonValue m_lastJsonValue;
     QJsonObject m_lastJsonObject;
     QJsonArray m_lastJsonArray;
+    QUrl m_lastUrl;
 };
 
 QT_END_NAMESPACE
