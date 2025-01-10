@@ -1,5 +1,5 @@
 # Copyright (C) 2022 The Qt Company Ltd.
-# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
 
 cmake_minimum_required(VERSION 3.16)
 project(standalone LANGUAGES CXX)
@@ -41,14 +41,16 @@ target_link_libraries(standalone PUBLIC
     Qt::Widgets
 )
 
-add_custom_command(
-    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/index.html
-    COMMAND ${CMAKE_COMMAND} -E copy
-            ${CMAKE_CURRENT_SOURCE_DIR}/index.html
-            ${CMAKE_CURRENT_BINARY_DIR}/index.html
-    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/index.html
-    VERBATIM
-)
+if (NOT CMAKE_CURRENT_BINARY_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/index.html
+        COMMAND ${CMAKE_COMMAND} -E copy
+                ${CMAKE_CURRENT_SOURCE_DIR}/index.html
+                ${CMAKE_CURRENT_BINARY_DIR}/index.html
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/index.html
+        VERBATIM
+    )
+endif()
 
 add_custom_command(
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/qwebchannel.js
