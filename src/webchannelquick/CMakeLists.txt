@@ -15,4 +15,5 @@ qt_internal_add_qml_module(WebChannelQuick
         QT_NO_CONTEXTLESS_CONNECT
     LIBRARIES
         Qt::WebChannelPrivate
+    OS2_SHORT_NAME WebChann
 )
