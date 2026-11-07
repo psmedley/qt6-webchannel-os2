@@ -1,8 +1,7 @@
 // Copyright (C) 2016 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author
 // Milian Wolff <milian.wolff@kdab.com>
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
-
-#undef QT_NO_FOREACH // this file contains unported legacy Q_FOREACH uses
+// Qt-Security score:significant reason:default
 
 #include "qqmlwebchannel.h"
 #include <QtWebChannel/qwebchannelabstracttransport.h>
@@ -27,31 +26,6 @@ QT_BEGIN_NAMESPACE
     clients. All properties, signals and public slots can be used from the HTML clients.
 
     \sa QWebChannel, {Qt WebChannel JavaScript API}{JavaScript API}
-*/
-
-/*!
-  \qmlproperty list<QtObject> WebChannel::transports
-  A list of transport objects, which implement QWebChannelAbstractTransport. The transports
-  are used to talk to the remote clients.
-
-  \sa connectTo(), disconnectFrom()
-*/
-
-/*!
-  \qmlproperty list<QtObject> WebChannel::registeredObjects
-
-  \brief A list of objects which should be accessible to remote clients.
-
-  The objects must have the attached \l id property set to an identifier, under which the
-  object is then known on the HTML side.
-
-  Once registered, all signals and property changes are automatically propagated to the clients.
-  Public invokable methods, including slots, are also accessible to the clients.
-
-  If one needs to register objects which are not available when the component is created, use the
-  imperative registerObjects method.
-
-  \sa registerObjects(), id
 */
 
 class QQmlWebChannelPrivate : public QWebChannelPrivate
@@ -169,6 +143,22 @@ void QQmlWebChannel::disconnectFrom(QObject *transport)
     }
 }
 
+/*!
+  \qmlproperty list<QtObject> WebChannel::registeredObjects
+
+  \brief A list of objects that should be accessible to remote clients.
+
+  The objects must have the attached \l id property set to an identifier, under which the
+  object is then known on the HTML side.
+
+  Once registered, all signals and property changes are automatically propagated to the clients.
+  Public invokable methods, including slots, are also accessible to the clients.
+
+  If you need to register objects that are not available when the component is created, use the
+  imperative registerObjects method.
+
+  \sa registerObjects(), id
+*/
 QQmlListProperty<QObject> QQmlWebChannel::registeredObjects()
 {
     return QQmlListProperty<QObject>(this, nullptr, registeredObjects_append,
@@ -178,12 +168,20 @@ QQmlListProperty<QObject> QQmlWebChannel::registeredObjects()
 
 void QQmlWebChannel::registeredObjects_append(QQmlListProperty<QObject> *prop, QObject *object)
 {
+    if (!object) {
+        qWarning() << "Cannot register null object to WebChannel";
+        return;
+    }
     const QQmlWebChannelAttached *const attached = qobject_cast<QQmlWebChannelAttached *>(
             qmlAttachedPropertiesObject<QQmlWebChannel>(object, false /* don't create */));
     if (!attached) {
         const QQmlContext *const context = qmlContext(object);
-        qWarning() << "Cannot register object" << context->nameForObject(object) << '(' << object
-                   << ") without attached WebChannel.id property. Did you forget to set it?";
+        if (context) {
+            qWarning() << "Cannot register object" << context->nameForObject(object) << '(' << object
+                       << ") without attached WebChannel.id property. Did you forget to set it?";
+        } else {
+            qWarning() << "Cannot register an object without WebChannel attached property.";
+        }
         return;
     }
     QQmlWebChannel *channel = static_cast<QQmlWebChannel *>(prop->object);
@@ -208,11 +206,19 @@ QObject *QQmlWebChannel::registeredObjects_at(QQmlListProperty<QObject> *prop, q
 void QQmlWebChannel::registeredObjects_clear(QQmlListProperty<QObject> *prop)
 {
     QQmlWebChannel *channel = static_cast<QQmlWebChannel *>(prop->object);
-    foreach (QObject *object, channel->d_func()->registeredObjects) {
+    const auto moved = std::exchange(channel->d_func()->registeredObjects, {}); // precautionary
+    for (QObject *object : moved)
         channel->deregisterObject(object);
-    }
-    return channel->d_func()->registeredObjects.clear();
 }
+
+/*!
+  \qmlproperty list<QtObject> WebChannel::transports
+
+  A list of transport objects that implement QWebChannelAbstractTransport. The transports
+  are used to talk to the remote clients.
+
+  \sa connectTo(), disconnectFrom()
+*/
 
 QQmlListProperty<QObject> QQmlWebChannel::transports()
 {
@@ -240,9 +246,12 @@ QObject *QQmlWebChannel::transports_at(QQmlListProperty<QObject> *prop, qsizetyp
 void QQmlWebChannel::transports_clear(QQmlListProperty<QObject> *prop)
 {
     QWebChannel *channel = static_cast<QWebChannel *>(prop->object);
-    foreach (QWebChannelAbstractTransport *transport, channel->d_func()->transports) {
+    // Need to take a copy (incl. forced detach :():
+    // - disconnectFrom() modifies `transport`, and
+    // - if we were to use a consume loop, disconnectFrom() wouldn't actually disconnect
+    const auto copy = channel->d_func()->transports;
+    for (QWebChannelAbstractTransport *transport : copy)
         channel->disconnectFrom(transport);
-    }
     Q_ASSERT(channel->d_func()->transports.isEmpty());
 }
 

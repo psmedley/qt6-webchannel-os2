@@ -1,6 +1,7 @@
 // Copyright (C) 2016 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Milian Wolff <milian.wolff@kdab.com>
 // Copyright (C) 2019 Menlo Systems GmbH, author Arno Rehn <a.rehn@menlosystems.com>
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:critical reason:data-parser
 
 #include "qmetaobjectpublisher_p.h"
 #include "qwebchannel.h"
@@ -397,7 +398,8 @@ void QMetaObjectPublisher::initializePropertyUpdates(QObject *const object, cons
 {
     auto *metaObject = object->metaObject();
     auto *signalHandler = signalHandlerFor(object);
-    for (const auto propertyInfoVar : objectInfo[KEY_PROPERTIES].toArray()) {
+    const QJsonArray array = objectInfo[KEY_PROPERTIES].toArray();
+    for (const auto propertyInfoVar : array) {
         const QJsonArray &propertyInfo = propertyInfoVar.toArray();
         if (propertyInfo.size() < 2) {
             qWarning() << "Invalid property info encountered:" << propertyInfoVar;
@@ -479,7 +481,8 @@ void QMetaObjectPublisher::sendPendingPropertyUpdates()
 
         // if the object is auto registered, just send the update only to clients which know this object
         if (wrappedObjects.contains(objectId)) {
-            for (QWebChannelAbstractTransport *transport : wrappedObjects.value(objectId).transports) {
+            const auto transports = wrappedObjects.value(objectId).transports;
+            for (QWebChannelAbstractTransport *transport : transports) {
                 QJsonArray &arr = specificUpdates[transport];
                 arr.push_back(obj);
             }
@@ -671,7 +674,8 @@ void QMetaObjectPublisher::signalEmitted(const QObject *object, const int signal
 
         // if the object is wrapped, just send the response to clients which know this object
         if (wrappedObjects.contains(objectName)) {
-            for (QWebChannelAbstractTransport *transport : wrappedObjects.value(objectName).transports) {
+            const auto transports = wrappedObjects.value(objectName).transports;
+            for (QWebChannelAbstractTransport *transport : transports) {
                 transport->sendMessage(message);
             }
         } else {
@@ -784,7 +788,8 @@ QVariant QMetaObjectPublisher::toVariant(const QJsonValue &value, int targetType
     QMetaType target(targetType);
 
     if (target.flags() & QMetaType::PointerToQObject) {
-        QObject *unwrappedObject = unwrapObject(value.toObject()[KEY_ID].toString());
+        const QJsonObject obj = value.toObject();
+        QObject *unwrappedObject = unwrapObject(obj.value(KEY_ID).toString());
         if (unwrappedObject == nullptr)
             qWarning() << "Cannot not convert non-object argument" << value << "to QObject*.";
         return QVariant::fromValue(unwrappedObject);
@@ -962,7 +967,7 @@ QJsonValue QMetaObjectPublisher::wrapResult(const QVariant &result, QWebChannelA
     } else if (result.canConvert<QVariantList>()) {
         // recurse and potentially wrap contents of the array
         // *don't* use result.toList() as that *only* works for QVariantList and QStringList!
-        // Also, don't use QSequentialIterable (yet), since that seems to trigger QTBUG-42016
+        // Also, don't use QMetaSequence::Iterable (yet), since that seems to trigger QTBUG-42016
         // in certain cases.
         // additionally, when there's a direct converter to QVariantList, use that one via convert
         // but recover when conversion fails and fall back to the .value<QVariantList> conversion
@@ -1018,7 +1023,7 @@ void QMetaObjectPublisher::broadcastMessage(const QJsonObject &message) const
         return;
     }
 
-    for (QWebChannelAbstractTransport *transport : webChannel->d_func()->transports) {
+    for (QWebChannelAbstractTransport *transport : std::as_const(webChannel->d_func()->transports)) {
         transport->sendMessage(message);
     }
 }
@@ -1029,7 +1034,7 @@ void QMetaObjectPublisher::enqueueBroadcastMessage(const QJsonObject &message)
         return;
     }
 
-    for (auto *transport : webChannel->d_func()->transports) {
+    for (auto *transport : std::as_const(webChannel->d_func()->transports)) {
         auto &state = transportState[transport];
         state.queuedMessages.append(message);
     }
